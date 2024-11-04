@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/CMakeFiles/bootloader
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/CMakeFiles/bootloader.rule
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/CMakeFiles/bootloader-complete.rule
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/mnt/DATA/esp-idf.vcode/Projects/i2c-driver-dev/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
