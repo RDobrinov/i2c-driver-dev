@@ -106,10 +106,29 @@ void app_main(void)
             bus_list = bus_element;
         }
     }
+
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x21,
+        .scl_speed_hz = 100000,
+    };
+
+    i2c_master_dev_handle_t dev_handle;
+
+    bus_element = bus_list;
+    if(bus_element) {
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
+        dev_cfg.device_address = 0x22;
+        dev_cfg.scl_speed_hz = 200000;
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
+        dev_cfg.device_address = 0x23;
+        dev_cfg.scl_speed_hz = 300000;
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
+    }
     //Bus structures located in i2c_private.h
     bus_element = bus_list; 
     while(bus_element) {
-        printf("[I2C Port Number %02u SDA: GPIO%02u SCL: GPIO%02u] CLK SRC: %u, CLK SRC FREQ: %lu, PULLUP: %u, I2C transaction queue size %u\n", 
+        printf("[I2C%02u] GPIO%02u[SDA] GPIO%02u[SCL] CLK_SRC %u, CLK_SRC_FREQ %lu, PULLUP %u, I2C_TRANS_QSIZE %u\n", 
             ((i2c_bus_t *)(bus_element->bus_handle->base))->port_num,
             ((i2c_bus_t *)(bus_element->bus_handle->base))->sda_num,
             ((i2c_bus_t *)(bus_element->bus_handle->base))->scl_num,
@@ -118,6 +137,13 @@ void app_main(void)
             ((i2c_bus_t *)(bus_element->bus_handle->base))->pull_up_enable,
             bus_element->bus_handle->queue_size
         );
+        i2c_master_device_list_t *bus_devices = bus_element->bus_handle->device_list.slh_first;
+        if(bus_devices) printf("Devices attached to bus\n");
+        while(bus_devices) {
+            printf("0x%02x@%luHz 10Bits %u ACK %u\n",
+            bus_devices->device->device_address, bus_devices->device->scl_speed_hz, bus_devices->device->addr_10bits, bus_devices->device->ack_check_disable);
+            bus_devices = (i2c_master_device_list_t*) bus_devices->next.sle_next;
+        }
         bus_element = bus_element->next;
     };
 
