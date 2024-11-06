@@ -125,6 +125,16 @@ void app_main(void)
         dev_cfg.scl_speed_hz = 300000;
         ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
     }
+    bus_element = bus_element->next;
+    if(bus_element) {
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
+        dev_cfg.device_address = 0x22;
+        dev_cfg.scl_speed_hz = 200000;
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
+        dev_cfg.device_address = 0x21;
+        dev_cfg.scl_speed_hz = 100000;
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
+    }
     //Bus structures located in i2c_private.h
     bus_element = bus_list; 
     while(bus_element) {
