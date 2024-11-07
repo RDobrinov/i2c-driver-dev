@@ -23,6 +23,8 @@
 #include "../i2c_private.h"
 #include "i2c_priv_master_driver.h"
 
+#include "esp_log.h"
+
 void app_main(void)
 {
     printf("Hello world!\n");
@@ -52,111 +54,33 @@ void app_main(void)
 
     printf("Minimum free heap size: %" PRIu32 " bytes\n", esp_get_minimum_free_heap_size());
 
-    i2c_pmd_bus_list_t *bus_list = (i2c_pmd_bus_list_t *)calloc(1, sizeof(i2c_pmd_bus_list_t));
-    i2c_pmd_bus_list_t *bus_element;
-
-    i2c_master_bus_config_t i2c_mst_config = {
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .i2c_port = -1,
-        .scl_io_num = GPIO_NUM_18,
-        .sda_io_num = GPIO_NUM_19,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true,
+    /**/
+    esp_event_loop_handle_t *uevent_loop = (esp_event_loop_handle_t *)malloc(sizeof(esp_event_loop_handle_t));
+    esp_event_loop_args_t uevent_args = {
+        .queue_size = 5,
+        .task_name = "testuloop",
+        .task_priority = 15,
+        .task_stack_size = 3072,
+        .task_core_id = tskNO_AFFINITY
     };
-    esp_err_t err = i2c_new_master_bus(&i2c_mst_config, &(bus_list->bus_handle));
+    esp_err_t err;
+    err = esp_event_loop_create(&uevent_args, uevent_loop);
+    (void)err;
 
-    if( err != ESP_OK ) {
-        free(bus_list);
-        bus_list = NULL;
-    }
+    i2cdrv_init(uevent_loop);
 
-    if(bus_list) {
-        i2c_mst_config.scl_io_num = GPIO_NUM_21;
-        i2c_mst_config.sda_io_num = GPIO_NUM_22;
-
-        bus_element = (i2c_pmd_bus_list_t *)calloc(1, sizeof(i2c_pmd_bus_list_t));
-        err = i2c_new_master_bus(&i2c_mst_config, &(bus_element->bus_handle));
-
-        if( err != ESP_OK ) {
-            free(bus_element);
-            bus_element = NULL;
-        }
-
-        if( bus_element ) 
-        {
-            bus_element->next = bus_list;
-            bus_list = bus_element;
-        }
-
-        i2c_mst_config.scl_io_num = GPIO_NUM_23;
-        i2c_mst_config.sda_io_num = GPIO_NUM_25;
-
-        bus_element = (i2c_pmd_bus_list_t *)calloc(1, sizeof(i2c_pmd_bus_list_t));
-        err = i2c_new_master_bus(&i2c_mst_config, &(bus_element->bus_handle));
-
-        if( err != ESP_OK ) {
-            if( err == ESP_ERR_NOT_FOUND ) { printf("No more free buses\n"); }
-            free(bus_element);
-            bus_element = NULL;
-        }
-
-        if( bus_element ) 
-        {
-            bus_element->next = bus_list;
-            bus_list = bus_element;
-        }
-    }
-
-    i2c_device_config_t dev_cfg = {
+    i2cdrv_device_config_t *test_dev = (i2cdrv_device_config_t *)calloc(1, sizeof(i2cdrv_device_config_t));
+    test_dev->dev_config = (i2c_device_config_t) {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = 0x21,
-        .scl_speed_hz = 100000,
+        .scl_speed_hz = 100000
     };
+    test_dev->scl_io_num = GPIO_NUM_21;
+    test_dev->sda_io_num = GPIO_NUM_22;
+    ESP_LOGE("78","LOGE");
+    esp_event_post_to(uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, test_dev, sizeof(i2cdrv_device_config_t), 1);
 
-    i2c_master_dev_handle_t dev_handle;
-
-    bus_element = bus_list;
-    if(bus_element) {
-        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
-        dev_cfg.device_address = 0x22;
-        dev_cfg.scl_speed_hz = 200000;
-        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
-        dev_cfg.device_address = 0x23;
-        dev_cfg.scl_speed_hz = 300000;
-        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
-    }
-    bus_element = bus_element->next;
-    if(bus_element) {
-        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
-        dev_cfg.device_address = 0x22;
-        dev_cfg.scl_speed_hz = 200000;
-        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
-        dev_cfg.device_address = 0x21;
-        dev_cfg.scl_speed_hz = 100000;
-        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_element->bus_handle, &dev_cfg, &dev_handle));
-    }
-    //Bus structures located in i2c_private.h
-    bus_element = bus_list; 
-    while(bus_element) {
-        printf("[I2C%02u] GPIO%02u[SDA] GPIO%02u[SCL] CLK_SRC %u, CLK_SRC_FREQ %lu, PULLUP %u, I2C_TRANS_QSIZE %u\n", 
-            ((i2c_bus_t *)(bus_element->bus_handle->base))->port_num,
-            ((i2c_bus_t *)(bus_element->bus_handle->base))->sda_num,
-            ((i2c_bus_t *)(bus_element->bus_handle->base))->scl_num,
-            ((i2c_bus_t *)(bus_element->bus_handle->base))->clk_src,
-            ((i2c_bus_t *)(bus_element->bus_handle->base))->clk_src_freq_hz,
-            ((i2c_bus_t *)(bus_element->bus_handle->base))->pull_up_enable,
-            bus_element->bus_handle->queue_size
-        );
-        i2c_master_device_list_t *bus_devices = bus_element->bus_handle->device_list.slh_first;
-        if(bus_devices) printf("Devices attached to bus\n");
-        while(bus_devices) {
-            printf("0x%02x@%luHz 10Bits %u ACK %u\n",
-            bus_devices->device->device_address, bus_devices->device->scl_speed_hz, bus_devices->device->addr_10bits, bus_devices->device->ack_check_disable);
-            bus_devices = (i2c_master_device_list_t*) bus_devices->next.sle_next;
-        }
-        bus_element = bus_element->next;
-    };
-
+    /**/
     for (int i = 10; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
