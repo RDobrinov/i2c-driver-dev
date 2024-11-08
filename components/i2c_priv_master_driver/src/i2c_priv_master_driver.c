@@ -19,12 +19,11 @@
 */
 typedef union {
     struct {
-        uint32_t i2caddr:10;        /*!< Device I2C Address */
-        uint32_t i2cbus:2;          /*!< Controller bus number */
-        uint32_t reserved_lsw:4;    /*!< Not used */
-        uint32_t gpiosda:7;         /*!< Bus SDA GPIO */
-        uint32_t gpioscl:7;         /*!< Bus SDA GPIO */
-        uint32_t reserved_msw:2;    /*!< Not used */
+        uint32_t i2caddr:10;    /*!< Device I2C Address */
+        uint32_t i2cbus:2;      /*!< Controller bus number */
+        uint32_t gpiosda:7;     /*!< Bus SDA GPIO */
+        uint32_t gpioscl:7;     /*!< Bus SDA GPIO */
+        uint32_t reserved:6;    /*!< Not used */
     };
     uint32_t id;                    /*!< Single i2c device ID */
 } i2c_pmd_device_id_t;
@@ -107,7 +106,6 @@ static i2cdrv_internal_config_t *i2cdrv_run_config = NULL;
 static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if( I2CCMND_EVENT == event_base) {
         if(I2CDRV_EVENT_ATTACH == event_id) {
-            ESP_LOGI(tag, "I2CDRV_EVENT_ATTACH");
             i2cdrv_bus_list_t *active_bus = i2cdrv_find_bus( ((i2cdrv_device_config_t *)event_data)->scl_io_num, ((i2cdrv_device_config_t *)event_data)->sda_io_num );
             if(!active_bus) {
                 i2c_master_bus_config_t i2c_bus_config = {
@@ -123,7 +121,6 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                     /* Error processing */ /*No mem*/
                     return;
                 }
-                ESP_LOGI(tag, "Request new bus");
                 esp_err_t err = i2c_new_master_bus(&i2c_bus_config, &(active_bus->bus_handle));
                 if( ESP_OK != err ) {
                     free(active_bus);
@@ -132,8 +129,8 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                 }
                 if(i2cdrv_run_config->i2cdrv_buses) active_bus->next = i2cdrv_run_config->i2cdrv_buses;
                 i2cdrv_run_config->i2cdrv_buses = active_bus;
-                i2cdrv_attach_device(i2cdrv_run_config->i2cdrv_buses, (i2cdrv_device_config_t *)event_data);
             }
+            i2cdrv_attach_device(active_bus, (i2cdrv_device_config_t *)event_data);
         }
     }
     return;
@@ -193,15 +190,14 @@ esp_err_t i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_device_config_t *d
     new_list_entry->device_id = ((i2c_pmd_device_id_t) {
         .i2caddr = dev_config->dev_config.device_address,
         .i2cbus = bus->bus_handle->base->port_num,
-        .reserved_lsw = 0,
         .gpioscl = dev_config->scl_io_num,
-        .gpiosda = dev_config->sda_io_num,
-        .reserved_msw = 0
+        .gpiosda = dev_config->sda_io_num
     }).id;
 
     if( i2cdrv_run_config->i2c_devices ) new_list_entry->next = i2cdrv_run_config->i2c_devices;
     i2cdrv_run_config->i2c_devices = new_list_entry;
-    ESP_LOGI(tag, "Device attached");
+    ESP_LOGI(tag, "Device ID:0x%08lX attached bus %u", new_list_entry->device_id, new_list_entry->dev_handle->master_bus->base->port_num);
+    i2cdrv_event_post(I2CDRV_EVENT_ATTACHED, &(new_list_entry->device_id), sizeof(uint32_t));
     return ESP_OK;
 }
 

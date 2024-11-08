@@ -25,6 +25,16 @@
 
 #include "esp_log.h"
 
+static char *mtag = "main";
+
+static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    if( I2CRESP_EVENT == event_base) {
+        if(I2CDRV_EVENT_ATTACHED == event_id) {
+            ESP_LOGI(mtag, "[I2CDRV_EVENT_ATTACHED] ID:%08lX @ I2CBUS%u", *((uint32_t *)event_data), (uint8_t)(0x03 & (*((uint32_t *)event_data)>>10)));
+        }
+    }
+}
+
 void app_main(void)
 {
     printf("Hello world!\n");
@@ -67,6 +77,8 @@ void app_main(void)
     err = esp_event_loop_create(&uevent_args, uevent_loop);
     (void)err;
 
+    esp_event_handler_instance_register_with(*uevent_loop, I2CRESP_EVENT, ESP_EVENT_ANY_ID, main_event_handler, NULL, NULL );
+
     i2cdrv_init(uevent_loop);
 
     i2cdrv_device_config_t *test_dev = (i2cdrv_device_config_t *)calloc(1, sizeof(i2cdrv_device_config_t));
@@ -77,8 +89,23 @@ void app_main(void)
     };
     test_dev->scl_io_num = GPIO_NUM_21;
     test_dev->sda_io_num = GPIO_NUM_22;
-    ESP_LOGE("78","LOGE");
-    esp_event_post_to(uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, test_dev, sizeof(i2cdrv_device_config_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, test_dev, sizeof(i2cdrv_device_config_t), 1);
+
+    test_dev->dev_config = (i2c_device_config_t) {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x22,
+        .scl_speed_hz = 200000
+    };
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, test_dev, sizeof(i2cdrv_device_config_t), 1);
+
+    test_dev->dev_config = (i2c_device_config_t) {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x21,
+        .scl_speed_hz = 100000
+    };
+    test_dev->scl_io_num = GPIO_NUM_23;
+    test_dev->sda_io_num = GPIO_NUM_25;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, test_dev, sizeof(i2cdrv_device_config_t), 1);
 
     /**/
     for (int i = 10; i >= 0; i--) {
