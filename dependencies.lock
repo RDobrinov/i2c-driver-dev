@@ -16,6 +16,6 @@ dependencies:
 direct_dependencies:
 - idf
 - idf_gpio_driver
-manifest_hash: d69c6a8c12b2b5eaf337ab7c5fd43039111765445b88c8c616e44ec47ddaa27d
+manifest_hash: 3a0fd85e369549c8f036acfb90f5aa75b6eb1bf1e1ef51d09feb3dd4a2941530
 target: esp32
 version: 2.0.0

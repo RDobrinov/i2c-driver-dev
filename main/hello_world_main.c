@@ -23,14 +23,26 @@
 #include "../i2c_private.h"
 #include "i2c_priv_master_driver.h"
 
+/* test */
+#include "idf_gpio_driver.h"
+/* test */
+
 #include "esp_log.h"
 
 static char *mtag = "main";
+
+uint32_t delete_id;
 
 static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if( I2CRESP_EVENT == event_base) {
         if(I2CDRV_EVENT_ATTACHED == event_id) {
             ESP_LOGI(mtag, "[I2CDRV_EVENT_ATTACHED] ID:%08lX @ I2CBUS%u", *((uint32_t *)event_data), (uint8_t)(0x03 & (*((uint32_t *)event_data)>>10)));
+        }
+        if(I2CDRV_EVENT_DEATTACHED == event_id) {
+            ESP_LOGI(mtag, "[I2CDRV_EVENT_DEATTACHED] ID:%08lX @ I2CBUS%u", *((uint32_t *)event_data), (uint8_t)(0x03 & (*((uint32_t *)event_data)>>10)));
+        }
+        if(I2CDRV_EVENT_ERROR == event_id) {
+            ESP_LOGI(mtag, "[I2CDRV_EVENT_ERROR] %05d.%05d", ((i2cdrv_error_event_t *)event_data)->code, ((i2cdrv_error_event_t *)event_data)->subcode);
         }
     }
 }
@@ -96,6 +108,7 @@ void app_main(void)
         .device_address = 0x22,
         .scl_speed_hz = 200000
     };
+    test_dev->sda_io_num = GPIO_NUM_22;
     esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, test_dev, sizeof(i2cdrv_device_config_t), 1);
 
     test_dev->dev_config = (i2c_device_config_t) {
@@ -108,10 +121,16 @@ void app_main(void)
     esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, test_dev, sizeof(i2cdrv_device_config_t), 1);
 
     /**/
-    for (int i = 10; i >= 0; i--) {
+    for (int i = 3; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DUMP, test_dev, sizeof(i2cdrv_device_config_t), 1);
+
+    delete_id = 0x00A96022;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, &delete_id, sizeof(uint32_t), 1);
+
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DUMP, test_dev, sizeof(i2cdrv_device_config_t), 1);
     printf("Stop.\n");
     fflush(stdout);
 }

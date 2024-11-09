@@ -29,7 +29,8 @@ typedef struct i2cdrv_device_config {
 typedef enum {
     I2CDRV_EVENT_ATTACH,       /*!< [in] Attach new device request */
     I2CDRV_EVENT_DEATTACH,     /*!< [in] Deattach device request */
-} i2c_pmd_driver_cmnd_event_t;
+    I2CDRV_EVENT_DUMP = 0xFF   /* For test only */
+} i2cdrv_cmnd_event_t;
 
 ESP_EVENT_DECLARE_BASE(I2CCMND_EVENT);
 
@@ -39,9 +40,33 @@ ESP_EVENT_DECLARE_BASE(I2CCMND_EVENT);
 typedef enum {
     I2CDRV_EVENT_ATTACHED,     /*!< [out] Device attached to I2C Bus */
     I2CDRV_EVENT_DEATTACHED,   /*!< [out] Device deattached from I2C Bus */
-} i2c_pmd_driver_resp_event_t;
+    I2CDRV_EVENT_ERROR
+} i2cdrv_resp_event_t;
 
 ESP_EVENT_DECLARE_BASE(I2CRESP_EVENT);
+
+typedef enum {
+    DRV_ERR_ATTACH_FAILED,
+    DRV_ERR_DEATTACH_FAILED
+} i2cdrv_error_codes_t;
+
+typedef enum {
+    DRV_ERR_NO_MORE_BUSES,
+    DRV_ERR_PIN_ALREADY_USED,
+    DRV_ERR_DEVICE_ALREADY_ATTACHED,
+    DRV_ERR_DEVICE_NOT_FOUND
+} i2cdrv_error_subcodes_t;
+
+/**
+ * @brief Event data with error codes
+*/
+typedef union {
+    struct {
+        uint32_t subcode:16;    /*!< Error subcode */
+        uint32_t code:16;       /*!< Error code */
+    };
+    uint32_t id;                /*!< Codes holder */
+} i2cdrv_error_event_t;
 
 void i2cdrv_init(esp_event_loop_handle_t *i2cdrv_evt_loop);
 
