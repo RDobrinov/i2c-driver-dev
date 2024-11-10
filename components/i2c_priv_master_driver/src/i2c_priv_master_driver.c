@@ -15,20 +15,6 @@
 #include "esp_log.h"
 
 /**
- * @brief Type of unique ID for attached i2c device
-*/
-typedef union {
-    struct {
-        uint32_t i2caddr:10;    /*!< Device I2C Address */
-        uint32_t i2cbus:2;      /*!< Controller bus number */
-        uint32_t gpiosda:7;     /*!< Bus SDA GPIO */
-        uint32_t gpioscl:7;     /*!< Bus SDA GPIO */
-        uint32_t reserved:6;    /*!< Not used */
-    };
-    uint32_t id;                    /*!< Single i2c device ID */
-} i2cdrv_device_id_t;
-
-/**
  * @brief Type of slist element for active i2c buses
 */
 typedef struct i2cdrv_bus_list {
@@ -36,10 +22,13 @@ typedef struct i2cdrv_bus_list {
     struct i2cdrv_bus_list *next;       /*!< Pointer to next element */
 } i2cdrv_bus_list_t;
 
+/**
+ * @brief Type of slist element for active i2c devices
+*/
 typedef struct i2cdrv_device_list {
-    uint32_t device_id;
-    i2c_master_dev_handle_t dev_handle;
-    struct i2cdrv_device_list *next;
+    uint32_t device_id;                 /*!< Internal device ID */
+    i2c_master_dev_handle_t dev_handle; /*!< Device handle */
+    struct i2cdrv_device_list *next;    /*!< Pionter to next element */
 } i2cdrv_device_list_t;
 
 /**
@@ -85,10 +74,49 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
  * @return 
  *      - None
 */
-static esp_err_t i2cdrv_event_post(int32_t event_id, const void *event_data, size_t event_data_size);
+static void i2cdrv_event_post(int32_t event_id, const void *event_data, size_t event_data_size);
 
 /**
- * @brief Find active bus by GPIOs
+ * @brief Driver error event post
+ * 
+ * @param[in] event_id Event ID to post
+ * @param[in] event_data Pointer to event data to post
+
+ * @return 
+ *      - None
+*/
+static void i2cdrv_event_err(const void *event_data, i2cdrv_bus_opcodes_t code);
+
+/**
+ * @brief Attach device to master bus
+ * 
+ * @param[bus] Master bus handler to attach device
+ * @param[dev_config] I2C device configuration
+ * @return 
+ *      - ESP_OK if succeed
+*/
+void i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_comm_event_data_t *event_data);
+
+/**
+ * @brief Deattach device to master bus
+ * 
+ * @param[event_data] Data received with command event
+ * @return 
+ *      - ESP_OK if succeed
+*/
+void i2cdrv_deattach_device(i2cdrv_comm_event_data_t *event_data);
+
+/**
+ * @brief Process Operation command
+ * 
+ * @param[event_data] Data received with command event
+ * @return 
+ *      - None
+*/
+void i2cdrv_process_opcmd(i2cdrv_comm_event_data_t *event_data);
+
+/**
+ * @brief Find active master bus by GPIOs
  * 
  * @param[in] scl Clock i2c pin
  * @param[in] sda Data i2c pin
@@ -106,32 +134,30 @@ i2cdrv_bus_list_t *i2cdrv_find_bus(gpio_num_t scl, gpio_num_t sda);
 */
 i2cdrv_device_list_t *i2cdrv_find_device_by_id(uint32_t id);
 
-esp_err_t i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_device_config_t *dev_config);
-
-void i2cdrv_deattach_device(uint32_t id);
-
 char *tag ="I2CDRV";
 
 static i2cdrv_internal_config_t *i2cdrv_run_config = NULL;
 
 static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if( I2CCMND_EVENT == event_base) {
+        if(I2CDRV_EVENT_OPEXEC == event_id) i2cdrv_process_opcmd(event_data);
         if(I2CDRV_EVENT_ATTACH == event_id) {
-            i2cdrv_bus_list_t *active_bus = i2cdrv_find_bus( ((i2cdrv_device_config_t *)event_data)->scl_io_num, ((i2cdrv_device_config_t *)event_data)->sda_io_num );
+            i2cdrv_bus_list_t *active_bus = i2cdrv_find_bus( 
+                ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num, 
+                ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num 
+            );
             if(!active_bus) {
-                if( !gpio_drv_reserve_pins(BIT64(((i2cdrv_device_config_t *)event_data)->scl_io_num) | BIT64(((i2cdrv_device_config_t *)event_data)->sda_io_num)) ) {
-                    i2cdrv_error_event_t error = {
-                        .code = DRV_ERR_ATTACH_FAILED,
-                        .subcode = DRV_ERR_PIN_ALREADY_USED
-                    };
-                    i2cdrv_event_post(I2CDRV_EVENT_ERROR, &(error.id), sizeof(uint32_t));
+                if( !gpio_drv_reserve_pins(
+                        BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num) | 
+                        BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num)) ) {
+                    i2cdrv_event_err(event_data, I2CDRV_ERR_PIN_IN_USE);
                     return;
                 }
                 i2c_master_bus_config_t i2c_bus_config = {
                     .clk_source = I2C_CLK_SRC_DEFAULT,
                     .i2c_port = -1,
-                    .scl_io_num = ((i2cdrv_device_config_t *)event_data)->scl_io_num,
-                    .sda_io_num = ((i2cdrv_device_config_t *)event_data)->sda_io_num,
+                    .scl_io_num = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num,
+                    .sda_io_num = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num, 
                     .glitch_ignore_cnt = 7,
                     .flags.enable_internal_pullup = true,
                 };
@@ -143,13 +169,13 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                 esp_err_t err = i2c_new_master_bus(&i2c_bus_config, &(active_bus->bus_handle));
                 if( ESP_OK != err ) {
                     free(active_bus);
-                    /* Error processing */
+                    i2cdrv_event_err(event_data, (ESP_ERR_NOT_FOUND == err) ? I2CDRV_ERR_NO_MORE_BUSES : I2CDRV_BUS_ERR_UNKNOWN);
                     return;
                 }
                 if(i2cdrv_run_config->i2cdrv_buses) active_bus->next = i2cdrv_run_config->i2cdrv_buses;
                 i2cdrv_run_config->i2cdrv_buses = active_bus;
             }
-            i2cdrv_attach_device(active_bus, (i2cdrv_device_config_t *)event_data);
+            i2cdrv_attach_device(active_bus, (((i2cdrv_comm_event_data_t *)event_data)));
             return;
         }
 
@@ -166,7 +192,7 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
         }
 
         if(I2CDRV_EVENT_DEATTACH == event_id) {
-            i2cdrv_deattach_device(*((uint32_t *)event_data));
+            i2cdrv_deattach_device((i2cdrv_comm_event_data_t *)event_data);
         }
     }
     return;
@@ -191,16 +217,21 @@ void i2cdrv_init(esp_event_loop_handle_t *uevent_loop) {
     }
 }
 
-static esp_err_t i2cdrv_event_post(int32_t event_id, const void *event_data, size_t event_data_size) {
-    return (i2cdrv_run_config->i2cdrv_event_loop) ? esp_event_post_to(i2cdrv_run_config->i2cdrv_event_loop, I2CRESP_EVENT, event_id, event_data, event_data_size, 1)
+static void i2cdrv_event_post(int32_t event_id, const void *event_data, size_t event_data_size) {
+    (i2cdrv_run_config->i2cdrv_event_loop) ? esp_event_post_to(i2cdrv_run_config->i2cdrv_event_loop, I2CRESP_EVENT, event_id, event_data, event_data_size, 1)
                                   : esp_event_post(I2CRESP_EVENT, event_id, event_data, event_data_size, 1);
+}
+
+static void i2cdrv_event_err(const void *event_data, i2cdrv_bus_opcodes_t code) {
+    ((i2cdrv_comm_event_data_t *)event_data)->code = code;
+    i2cdrv_event_post(I2CDRV_EVENT_ERROR, event_data, sizeof(i2cdrv_comm_event_data_t));
+    return;
 }
 
 /* Helper functions */
 
 i2cdrv_bus_list_t *i2cdrv_find_bus(gpio_num_t scl, gpio_num_t sda) {
     i2cdrv_bus_list_t *bus_element = i2cdrv_run_config->i2cdrv_buses;
-    //if(!bus_element) return NULL;
     bool found = false;
     while(bus_element && !found) {
         if( bus_element->bus_handle->base->scl_num == scl && bus_element->bus_handle->base->sda_num == sda ) found = true;
@@ -217,55 +248,55 @@ i2cdrv_device_list_t *i2cdrv_find_device_by_id(uint32_t id) {
     return found;
 }
 
-esp_err_t i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_device_config_t *dev_config) {
-    uint32_t new_device_id = ((i2cdrv_device_id_t) {
-        .i2caddr = dev_config->dev_config.device_address,
+void i2cdrv_process_opcmd(i2cdrv_comm_event_data_t *event_data) {
+    *((uint32_t *)(event_data->ptrInData)) = 0x00BFFB01;
+    *((uint32_t *)(event_data->prtOutData)) = 0xBFFB0103;
+    i2cdrv_event_err(event_data, I2CDRV_ERR_TEST);
+}
+
+void i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_comm_event_data_t *event_data) {
+    event_data->device_id = ((i2cdrv_device_id_t) {
+        .i2caddr = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->dev_config.device_address,
         .i2cbus = bus->bus_handle->base->port_num,
-        .gpioscl = dev_config->scl_io_num,
-        .gpiosda = dev_config->sda_io_num
-    }).id;
-    if(i2cdrv_find_device_by_id(new_device_id)) {
-        i2cdrv_error_event_t error = {
-            .code = DRV_ERR_ATTACH_FAILED,
-            .subcode = DRV_ERR_DEVICE_ALREADY_ATTACHED
-        };
-        i2cdrv_event_post(I2CDRV_EVENT_ERROR, &(error.id), sizeof(uint32_t));
-        return ESP_OK;
+        .gpioscl = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num,
+        .gpiosda = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num
+    });
+    if(i2cdrv_find_device_by_id(event_data->device_id.id)) {
+        i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_ALREADY_ATTACHED);
+        return;
     }
     i2c_master_dev_handle_t *new_dev_handle = (i2c_master_dev_handle_t *)calloc(1, sizeof(i2c_master_dev_handle_t));
-    esp_err_t err = i2c_master_bus_add_device(bus->bus_handle, &(dev_config->dev_config), new_dev_handle);
+    esp_err_t err = i2c_master_bus_add_device(bus->bus_handle, &(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->dev_config), new_dev_handle);
     if(ESP_OK != err) {
         free(new_dev_handle);
-        return ESP_ERR_NO_MEM;
+        i2cdrv_event_err(event_data, I2CDRV_ERR_NO_MEM);
     }
     i2cdrv_device_list_t *new_list_entry = (i2cdrv_device_list_t *)calloc(1, sizeof(i2cdrv_device_list_t));
     if(!new_list_entry) {
         i2c_master_bus_rm_device(*new_dev_handle);
         free(new_dev_handle);
-        return ESP_ERR_NO_MEM;
+        i2cdrv_event_err(event_data, I2CDRV_ERR_NO_MEM);
+        return;
     }
     new_list_entry->dev_handle = *new_dev_handle;
-    new_list_entry->device_id = new_device_id;
+    new_list_entry->device_id = event_data->device_id.id;
 
     if( i2cdrv_run_config->i2c_devices ) new_list_entry->next = i2cdrv_run_config->i2c_devices;
     i2cdrv_run_config->i2c_devices = new_list_entry;
-    ESP_LOGI(tag, "Device ID:0x%08lX attached bus %u", new_list_entry->device_id, new_list_entry->dev_handle->master_bus->base->port_num);
-    i2cdrv_event_post(I2CDRV_EVENT_ATTACHED, &(new_device_id), sizeof(uint32_t));
-    return ESP_OK;
+    event_data->code = I2CDRV_BUS_OK;
+    i2cdrv_event_post(I2CDRV_EVENT_ATTACHED, event_data, sizeof(i2cdrv_comm_event_data_t));
+    return;
 }
 
-void i2cdrv_deattach_device(uint32_t id) {
-    i2cdrv_device_list_t *found = i2cdrv_find_device_by_id(id);
+void i2cdrv_deattach_device(i2cdrv_comm_event_data_t *event_data) {
+    i2cdrv_device_list_t *found = i2cdrv_find_device_by_id(event_data->device_id.id);
     if(!found) {
-        i2cdrv_error_event_t error = {
-            .code = DRV_ERR_DEATTACH_FAILED,
-            .subcode = DRV_ERR_DEVICE_NOT_FOUND
-        };
-        i2cdrv_event_post(I2CDRV_EVENT_ERROR, &(error.id), sizeof(uint32_t));
+        i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_NOT_FOUND);
     } else {
         i2c_master_bus_handle_t bus = found->dev_handle->master_bus;
         if( ESP_OK == i2c_master_bus_rm_device(found->dev_handle) ) {
-            i2cdrv_event_post(I2CDRV_EVENT_DEATTACH, &(found->device_id), sizeof(uint32_t));
+            event_data->code = I2CDRV_BUS_OK;
+            i2cdrv_event_post(I2CDRV_EVENT_DEATTACHED, event_data, sizeof(i2cdrv_comm_event_data_t));
             if( found == i2cdrv_run_config->i2c_devices ) i2cdrv_run_config->i2c_devices = found->next;
             else {
                 i2cdrv_device_list_t *last_device = i2cdrv_run_config->i2c_devices;
