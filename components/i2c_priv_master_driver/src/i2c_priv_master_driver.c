@@ -107,15 +107,6 @@ void i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_comm_event_data_t *even
 void i2cdrv_deattach_device(i2cdrv_comm_event_data_t *event_data);
 
 /**
- * @brief Process Operation command
- * 
- * @param[event_data] Data received with command event
- * @return 
- *      - None
-*/
-void i2cdrv_process_opcmd(i2cdrv_comm_event_data_t *event_data);
-
-/**
  * @brief Find active master bus by GPIOs
  * 
  * @param[in] scl Clock i2c pin
@@ -140,16 +131,90 @@ static i2cdrv_internal_config_t *i2cdrv_run_config = NULL;
 
 static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if( I2CCMND_EVENT == event_base) {
-        if(I2CDRV_EVENT_OPEXEC == event_id) i2cdrv_process_opcmd(event_data);
+        if(I2CDRV_EVENT_OPEXEC == event_id) {
+            ((i2cdrv_comm_event_data_t *)event_data)->code = I2CDRV_BUS_OK;
+            /* Find device in device list */
+            i2cdrv_device_list_t *device = i2cdrv_find_device_by_id(((i2cdrv_comm_event_data_t *)event_data)->device_id.id);
+            if( !device ) {
+                i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_NOT_FOUND);
+                return;
+            }
+            /* No return value */
+            if(I2CDRV_BUSPROBE == ((i2cdrv_comm_event_data_t *)event_data)->cmd) {
+                if(ESP_OK != i2c_master_probe(device->dev_handle->master_bus, device->dev_handle->device_address, 1)) {
+                    i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_NOT_ACK);
+                } else {
+                    ((i2cdrv_comm_event_data_t *)event_data)->code = I2CDRV_BUS_OK;
+                    i2cdrv_event_post(I2CDRV_EVENT_DATA, event_data, sizeof(i2cdrv_comm_event_data_t));
+                }
+                return;
+            }
+            /* Write command with empty pointer or zero length */
+            if( ((((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_WRITE) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_RW)) 
+                    && (!((i2cdrv_comm_event_data_t *)event_data)->inDataLen || !((i2cdrv_comm_event_data_t *)event_data)->ptrInData)) {
+                i2cdrv_event_err(event_data, I2CDRV_BUS_ERR_BAD_ARGS);
+                return;
+            }
+            /* Init pointers by command */
+            if((((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_READ) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_RW)) {
+                if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_BLOB && !(((i2cdrv_comm_event_data_t *)event_data)->outDataLen)) {
+                    i2cdrv_event_err(event_data, I2CDRV_BUS_ERR_BAD_ARGS);
+                } else {
+                    switch (((i2cdrv_comm_event_data_t *)event_data)->type) {
+                        case I2CDRV_BUSDATA_UINT8:
+                            ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = sizeof(uint8_t);
+                            break;
+                        case I2CDRV_BUSDATA_UINT16:
+                            ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = sizeof(uint16_t);
+                            break;
+                        case I2CDRV_BUSDATA_UINT32:
+                            ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = sizeof(uint32_t);
+                            break;
+                        case I2CDRV_BUSDATA_UINT64:
+                            ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = sizeof(uint64_t);
+                            break;
+                    }
+                }
+                if(!((i2cdrv_comm_event_data_t *)event_data)->ptrOutData) {
+                    ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData = (uint8_t *)calloc(((i2cdrv_comm_event_data_t *)event_data)->inDataLen, sizeof(uint8_t));
+                    if(!((i2cdrv_comm_event_data_t *)event_data)->ptrOutData) {
+                        i2cdrv_event_err(event_data, I2CDRV_ERR_NO_MEM);
+                        return;
+                    }
+                }
+            }
+            esp_err_t err;
+            switch (((i2cdrv_comm_event_data_t *)event_data)->cmd) {
+                case I2CDRV_BUSCMD_WRITE:
+                    err = i2c_master_transmit(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen, 1);
+                    break;
+                case I2CDRV_BUSCMD_READ:
+                    err = i2c_master_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
+                    break;
+                case I2CDRV_BUSCMD_RW:
+                    err = i2c_master_transmit_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen,
+                                                     ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
+                    break;
+                default:
+                    i2cdrv_event_err(event_data, I2CDRV_BUS_ERR_UNKNOWN);
+                    return;
+            }
+            if(ESP_OK != err) i2cdrv_event_err(event_data, (ESP_ERR_TIMEOUT == err ) ? I2CDRV_BUS_ERR_TIMEOUT : I2CDRV_BUS_ERR_UNKNOWN);
+            else {
+                ((i2cdrv_comm_event_data_t *)event_data)->code = I2CDRV_BUS_OK;
+                i2cdrv_event_post(I2CDRV_EVENT_DATA, event_data, sizeof(i2cdrv_comm_event_data_t));
+            }
+            return;
+        }
         if(I2CDRV_EVENT_ATTACH == event_id) {
+            uint64_t pinmask = (BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num) | 
+                        BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num));
             i2cdrv_bus_list_t *active_bus = i2cdrv_find_bus( 
                 ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num, 
                 ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num 
             );
             if(!active_bus) {
-                if( !gpio_drv_reserve_pins(
-                        BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num) | 
-                        BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num)) ) {
+                if( !gpio_drv_reserve_pins(pinmask) ) {
                     i2cdrv_event_err(event_data, I2CDRV_ERR_PIN_IN_USE);
                     return;
                 }
@@ -169,6 +234,7 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                 esp_err_t err = i2c_new_master_bus(&i2c_bus_config, &(active_bus->bus_handle));
                 if( ESP_OK != err ) {
                     free(active_bus);
+                    gpio_drv_free_pins(pinmask);
                     i2cdrv_event_err(event_data, (ESP_ERR_NOT_FOUND == err) ? I2CDRV_ERR_NO_MORE_BUSES : I2CDRV_BUS_ERR_UNKNOWN);
                     return;
                 }
@@ -248,12 +314,6 @@ i2cdrv_device_list_t *i2cdrv_find_device_by_id(uint32_t id) {
     return found;
 }
 
-void i2cdrv_process_opcmd(i2cdrv_comm_event_data_t *event_data) {
-    *((uint32_t *)(event_data->ptrInData)) = 0x00BFFB01;
-    *((uint32_t *)(event_data->prtOutData)) = 0xBFFB0103;
-    i2cdrv_event_err(event_data, I2CDRV_ERR_TEST);
-}
-
 void i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_comm_event_data_t *event_data) {
     event_data->device_id = ((i2cdrv_device_id_t) {
         .i2caddr = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->dev_config.device_address,
@@ -313,9 +373,10 @@ void i2cdrv_deattach_device(i2cdrv_comm_event_data_t *event_data) {
             else while( last_bus && (last_bus->next->bus_handle != bus) ) last_bus = last_bus->next;
             if(last_bus) {
                 last_bus->next = last_bus->next->next;
-                if(ESP_OK == i2c_del_master_bus(bus)) {
-                    //ESP_LOGI("BUS", "Bus released");
-                }
+                gpio_drv_free_pins( BIT64(bus->base->scl_num) | BIT64(bus->base->sda_num));
+                if(ESP_OK != i2c_del_master_bus(bus)) {
+                    /* ERROR STATE: Bus not released but internal list is cleared */
+                } // else ESP_LOGI("BUS", "Bus released");
             }
         }
     }

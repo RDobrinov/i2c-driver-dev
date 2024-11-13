@@ -42,27 +42,30 @@ typedef enum {
     I2CDRV_BUSCMD_READ,
     I2CDRV_BUSCMD_WRITE,
     I2CDRV_BUSCMD_RW,
-    I2CDRV_BUSPOOL,
+    I2CDRV_BUSPROBE,
     I2CDRV_BUSCTL
 } i2cdrv_bus_command_t;
 
 typedef enum {
+    I2CDRV_BUSDATA_BLOB = 0,
     I2CDRV_BUSDATA_UINT8,
     I2CDRV_BUSDATA_UINT16,
     I2CDRV_BUSDATA_UINT32,
     I2CDRV_BUSDATA_UINT64,
-    I2CDRV_BUSDATA_BLOB
+    I2CDRV_BUSDATA_MAX
 } i2cdrv_bus_data_t;
 
 typedef enum {
     I2CDRV_BUS_OK,
     I2CDRV_BUS_ERR_NOT_FOUND,
     I2CDRV_BUS_ERR_TIMEOUT,
+    I2CDRV_BUS_ERR_BAD_ARGS,
     I2CDRV_ERR_NO_MEM,
     I2CDRV_ERR_NO_MORE_BUSES,
     I2CDRV_ERR_PIN_IN_USE,
     I2CDRV_ERR_DEVICE_ALREADY_ATTACHED,
     I2CDRV_ERR_DEVICE_NOT_FOUND,
+    I2CDRV_ERR_DEVICE_NOT_ACK,
     I2CDRV_ERR_TEST,
     I2CDRV_BUS_ERR_UNKNOWN
 } i2cdrv_bus_opcodes_t;
@@ -91,13 +94,13 @@ typedef struct {
             uint32_t code:4;
             uint32_t reserved:8;
         };
-        uint32_t command;
+        uint32_t holder;
     };
 
     i2cdrv_device_id_t device_id;
     uint32_t event_id;
     void *ptrInData;
-    void *prtOutData;
+    void *ptrOutData;
 } i2cdrv_comm_event_data_t;
 
 /**
