@@ -26,6 +26,7 @@
 /* test */
 #include "idf_gpio_driver.h"
 /* test */
+#include "driver/rmt_tx.h"
 
 #include "esp_log.h"
 
@@ -61,7 +62,40 @@ static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t e
         }
         if(I2CDRV_EVENT_ERROR == event_id) {
             //ESP_LOGI(mtag, "[I2CDRV_EVENT_ERROR] %05d", ((i2cdrv_comm_event_data_t *)event_data)->code);
-            ESP_LOGI(mtag, "[ERROR: %02d] %s", ((i2cdrv_comm_event_data_t *)event_data)->code, cc_errors[((i2cdrv_comm_event_data_t *)event_data)->code]);
+            ESP_LOGI(mtag, "[EVTID: %04lX ERROR: %02d] %s", ((i2cdrv_comm_event_data_t *)event_data)->event_id, ((i2cdrv_comm_event_data_t *)event_data)->code, cc_errors[((i2cdrv_comm_event_data_t *)event_data)->code]);
+            if(((i2cdrv_comm_event_data_t *)event_data)->code == I2CDRV_ERR_TEST) {
+                ESP_LOGE("", "%08lX, %08lX", inData, outData);
+            }
+        }
+        if(I2CDRV_EVENT_DATA == event_id) {
+            if(((i2cdrv_comm_event_data_t *)event_data)->code != I2CDRV_BUS_OK) {
+                ESP_LOGE("event_handler", "I2CDRV_EVENT_DATA with no I2CDRV_BUS_OK");
+                return;
+            } else ESP_LOGI(mtag, "[I2CDRV_EVENT_DATA]");
+            switch(((i2cdrv_comm_event_data_t *)event_data)->cmd) {
+                case I2CDRV_BUSCMD_READ:
+                case I2CDRV_BUSCMD_RW:
+                    switch(((i2cdrv_comm_event_data_t *)event_data)->cmd) {
+                        case I2CDRV_BUSDATA_UINT8:
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT8 %02X", *((uint8_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData)));
+                            break;
+                        case I2CDRV_BUSDATA_UINT16:
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT8 %04X", *((uint16_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData)));
+                            break;
+                        case I2CDRV_BUSDATA_UINT32:
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT8 %08lX", *((uint32_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData)));
+                            break;
+                        case I2CDRV_BUSDATA_UINT64:
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT8 %16llX", *((uint64_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData)));
+                            break;
+                        default:
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ BLOB");
+                    }
+                    break;
+                case I2CDRV_BUSCMD_WRITE:
+                    ESP_LOGI(mtag, "I2CDRV_BUSCMD_WRITE %d byte(s)", ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
+                default:
+            }
             if(((i2cdrv_comm_event_data_t *)event_data)->code == I2CDRV_ERR_TEST) {
                 ESP_LOGE("", "%08lX, %08lX", inData, outData);
             }
@@ -123,11 +157,11 @@ void app_main(void)
     //ESP32S3
     //test_dev->scl_io_num = GPIO_NUM_1;
     //test_dev->sda_io_num = GPIO_NUM_2;
-    i2cdrv_comm_event_data_t data ={};
-    data.ptrInData = test_dev;
+    i2cdrv_comm_event_data_t *data = (i2cdrv_comm_event_data_t *)calloc(1, sizeof(i2cdrv_comm_event_data_t));
+    data->ptrInData = test_dev;
     
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
     /**/
 
     test_dev->dev_config = (i2c_device_config_t) {
@@ -136,7 +170,7 @@ void app_main(void)
         .scl_speed_hz = 200000
     };
 
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
 
     test_dev->dev_config = (i2c_device_config_t) {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -149,15 +183,15 @@ void app_main(void)
     //ESP32S3
     //test_dev->scl_io_num = GPIO_NUM_2;
     //test_dev->sda_io_num = GPIO_NUM_5;
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
 
     test_dev->scl_io_num = GPIO_NUM_23;
     test_dev->sda_io_num = GPIO_NUM_25;
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
 
     test_dev->scl_io_num = GPIO_NUM_18;
     test_dev->sda_io_num = GPIO_NUM_19;
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
 
     /**/
     /*for (int i = 0; i >= 0; i--) {
@@ -166,25 +200,41 @@ void app_main(void)
     }*/
     //esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DUMP, NULL, 0, 1);
 
-    data.device_id.id = 0x00A96022;
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->device_id.id = 0x00A96022;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
     //data.device_id.id = 0x00A96025;
     //esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
-    data.device_id.id = 0x00B99421;
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->device_id.id = 0x00B99421;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
 
     //data.ptrInData = &inData;
     //data.prtOutData = &outData;
     //esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, &data, sizeof(i2cdrv_comm_event_data_t), 1);
 
-    data.ptrInData = test_dev;
+    data->ptrInData = test_dev;
     test_dev->scl_io_num = GPIO_NUM_18;
     test_dev->sda_io_num = GPIO_NUM_19;
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
 
-    data.cmd = I2CDRV_BUSPROBE;
-    data.device_id.id = 0x00A96021;
-    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->cmd = I2CDRV_BUSPROBE;
+    data->device_id.id = 0x00A96021;
+    data->ptrOutData = (uint8_t *)calloc(128, sizeof(uint8_t));
+    data->ptrInData = (uint8_t *)calloc(128, sizeof(uint8_t));
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->cmd = I2CDRV_BUSCMD_WRITE;
+    data->inDataLen = sizeof(uint32_t);
+    data->event_id = 0x0001;
+    memcpy(data->ptrInData, "0123456789ABCDEF", 16);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->cmd = I2CDRV_BUSCMD_READ;
+    data->type = I2CDRV_BUSDATA_UINT16;
+    data->event_id = 0x0010;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->cmd = I2CDRV_BUSCMD_RW;
+    data->type = I2CDRV_BUSDATA_UINT32;
+    data->inDataLen = sizeof(uint64_t);
+    data->event_id = 0x0100;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, data, sizeof(i2cdrv_comm_event_data_t), 1);
     //esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DUMP, NULL, 0, 1);
 
     /*for( int i=0; i<sizeof(uint32_t); i++) {

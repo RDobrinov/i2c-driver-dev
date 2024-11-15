@@ -50,6 +50,9 @@ typedef struct i2cdrv_internal_config {
 ESP_EVENT_DEFINE_BASE(I2CCMND_EVENT);
 ESP_EVENT_DEFINE_BASE(I2CRESP_EVENT);
 
+/* Test only */
+void hexdump(const uint8_t *buf, size_t len);
+
 /* Driver internal functions */
 
 /**
@@ -149,6 +152,7 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                 }
                 return;
             }
+            ESP_LOGW("dev_handle", "%p, %X", device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->cmd);
             /* Write command with empty pointer or zero length */
             if( ((((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_WRITE) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_RW)) 
                     && (!((i2cdrv_comm_event_data_t *)event_data)->inDataLen || !((i2cdrv_comm_event_data_t *)event_data)->ptrInData)) {
@@ -183,17 +187,39 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                     }
                 }
             }
-            esp_err_t err;
+            esp_err_t err = ESP_OK;
+            uint8_t test8 = 0x55;
+            uint16_t test16 = 0x5AA5;
+            uint32_t test32 = 0xA5AA5CAUL;
+            uint64_t test64 = 0x2132A5AA5CA3221ULL;
+            uint8_t *testblob = (uint8_t *)("1234567890ABDCEF");
             switch (((i2cdrv_comm_event_data_t *)event_data)->cmd) {
                 case I2CDRV_BUSCMD_WRITE:
-                    err = i2c_master_transmit(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen, 1);
+                    ESP_LOGW("I2CDRV_BUSCMD_WRITE","");
+                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
+                    //err = i2c_master_transmit(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen, 1);
                     break;
                 case I2CDRV_BUSCMD_READ:
-                    err = i2c_master_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
+                    ESP_LOGW("I2CDRV_BUSCMD_READ","");
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_BLOB) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, testblob, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT8) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test8, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT16) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test16, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT32) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test32, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT64) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test64, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    //err = i2c_master_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
                     break;
                 case I2CDRV_BUSCMD_RW:
-                    err = i2c_master_transmit_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen,
-                                                     ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
+                    ESP_LOGW("I2CDRV_BUSCMD_RW","");
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_BLOB) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, testblob, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT8) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test8, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT16) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test16, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT32) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test32, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT64) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test64, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
+                    //err = i2c_master_transmit_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen,
+                    //                                 ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
                     break;
                 default:
                     i2cdrv_event_err(event_data, I2CDRV_BUS_ERR_UNKNOWN);
@@ -380,6 +406,16 @@ void i2cdrv_deattach_device(i2cdrv_comm_event_data_t *event_data) {
             }
         }
     }
+    return;
+}
+
+/* Test only */
+
+void hexdump(const uint8_t *buf, size_t len) {
+    if( !len ) return;
+    ESP_LOGI("hexdump", "%p", buf);
+    for(int i=0; i<len; i++) printf("%02X ", buf[i]);
+    printf("\n");
     return;
 }
 
