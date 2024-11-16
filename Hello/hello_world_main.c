@@ -162,5 +162,101 @@ void app_main(void)
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
     printf("Stop.\n");
+
+    //ESP32
+    test_dev->scl_io_num = GPIO_NUM_21;
+    test_dev->sda_io_num = GPIO_NUM_22;
+    //ESP32S3
+    //test_dev->scl_io_num = GPIO_NUM_1;
+    //test_dev->sda_io_num = GPIO_NUM_2;
+    
+    
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    /**/
+
+    test_dev->dev_config = (i2c_device_config_t) {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x22,
+        .scl_speed_hz = 200000
+    };
+
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+
+    test_dev->dev_config = (i2c_device_config_t) {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x21,
+        .scl_speed_hz = 100000
+    };
+    //ESP32
+    test_dev->scl_io_num = GPIO_NUM_22;
+    test_dev->sda_io_num = GPIO_NUM_25;
+    //ESP32S3
+    //test_dev->scl_io_num = GPIO_NUM_2;
+    //test_dev->sda_io_num = GPIO_NUM_5;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+
+    test_dev->scl_io_num = GPIO_NUM_23;
+    test_dev->sda_io_num = GPIO_NUM_25;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+
+    test_dev->scl_io_num = GPIO_NUM_18;
+    test_dev->sda_io_num = GPIO_NUM_19;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+
+    /**/
+    /*for (int i = 0; i >= 0; i--) {
+        printf("Restarting in %d seconds...\n", i);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }*/
+    //esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DUMP, NULL, 0, 1);
+
+    data->device_id.id = 0x00A96022;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    //data.device_id.id = 0x00A96025;
+    //esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->device_id.id = 0x00B99421;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DEATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+
+    //data.ptrInData = &inData;
+    //data.prtOutData = &outData;
+    //esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, &data, sizeof(i2cdrv_comm_event_data_t), 1);
+
+    data->ptrInData = test_dev;
+    test_dev->scl_io_num = GPIO_NUM_18;
+    test_dev->sda_io_num = GPIO_NUM_19;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
+
+    data->cmd = I2CDRV_BUSPROBE;
+    data->device_id.id = 0x00A96021;
+    data->ptrOutData = (uint8_t *)calloc(128, sizeof(uint8_t));
+    data->ptrInData = (uint8_t *)calloc(128, sizeof(uint8_t));
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->cmd = I2CDRV_BUSCMD_WRITE;
+    data->inDataLen = sizeof(uint32_t);
+    data->event_id = 0x0001;
+    memcpy(data->ptrInData, "0123456789ABCDEF", 16);
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->cmd = I2CDRV_BUSCMD_READ;
+    data->type = I2CDRV_BUSDATA_UINT16;
+    data->event_id = 0x0010;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    data->cmd = I2CDRV_BUSCMD_RW;
+    data->type = I2CDRV_BUSDATA_UINT32;
+    data->inDataLen = sizeof(uint64_t);
+    data->event_id = 0x0100;
+    esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, data, sizeof(i2cdrv_comm_event_data_t), 1);
+    //esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_DUMP, NULL, 0, 1);
+
+    /*for( int i=0; i<sizeof(uint32_t); i++) {
+        //printf("%02X", test.arr[i]);
+        printf("%02X", *(((uint8_t *)&delete_id)+i));
+    }
+    printf("\n%08lX\n", delete_id);*/
+    //for (int i = 4; i >= 0; i--) {
+    //    printf("Restarting in %d seconds...\n", i);
+    //    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    //}
+
     fflush(stdout);
 }

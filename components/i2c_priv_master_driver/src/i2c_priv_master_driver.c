@@ -144,7 +144,8 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
             }
             /* No return value */
             if(I2CDRV_BUSPROBE == ((i2cdrv_comm_event_data_t *)event_data)->cmd) {
-                if(ESP_OK != i2c_master_probe(device->dev_handle->master_bus, device->dev_handle->device_address, 1)) {
+                //ESP_LOGE("pool", "%p 0x%02X", device->dev_handle->master_bus, device->dev_handle->device_address);
+                if(ESP_OK != i2c_master_probe(device->dev_handle->master_bus, device->dev_handle->device_address, 10)) {
                     i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_NOT_ACK);
                 } else {
                     ((i2cdrv_comm_event_data_t *)event_data)->code = I2CDRV_BUS_OK;
@@ -211,15 +212,15 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                     break;
                 case I2CDRV_BUSCMD_RW:
                     ESP_LOGW("I2CDRV_BUSCMD_RW","");
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_BLOB) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, testblob, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT8) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test8, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT16) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test16, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT32) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test32, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT64) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test64, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_BLOB) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, testblob, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT8) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test8, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT16) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test16, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT32) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test32, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT64) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test64, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    err = i2c_master_transmit_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen,
+                                                     ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 10);
                     hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
                     hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
-                    //err = i2c_master_transmit_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen,
-                    //                                 ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
                     break;
                 default:
                     i2cdrv_event_err(event_data, I2CDRV_BUS_ERR_UNKNOWN);
@@ -264,8 +265,10 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                     i2cdrv_event_err(event_data, (ESP_ERR_NOT_FOUND == err) ? I2CDRV_ERR_NO_MORE_BUSES : I2CDRV_BUS_ERR_UNKNOWN);
                     return;
                 }
+                //ESP_ERROR_CHECK(i2c_master_probe(active_bus->bus_handle, 0x76, -1));
                 if(i2cdrv_run_config->i2cdrv_buses) active_bus->next = i2cdrv_run_config->i2cdrv_buses;
                 i2cdrv_run_config->i2cdrv_buses = active_bus;
+                //ESP_LOGE("bus", "HANDLE: %p", active_bus->bus_handle);
             }
             i2cdrv_attach_device(active_bus, (((i2cdrv_comm_event_data_t *)event_data)));
             return;
