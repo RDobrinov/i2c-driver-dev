@@ -47,11 +47,11 @@ static const char *cc_errors[] = {
     "ERR_TEST"
 };
 
-uint32_t delete_id;
+//uint32_t delete_id;
 
-uint32_t inData, outData;
+//uint32_t inData, outData;
 esp_event_loop_handle_t *uevent_loop;
-uint8_t inBuffer[127];
+//uint8_t inBuffer[127];
 
 void hexdump(const uint8_t *buf, size_t len) {
     if( !len ) return;
@@ -89,19 +89,23 @@ static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t e
                 case BUSCMD_RW:
                     switch(((i2cdrv_comm_event_data_t *)event_data)->type) {
                         case BUSDATA_UINT8:
-                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT8 %02X", *((uint8_t *)(((i2cdrv_comm_event_data_t *)event_data)->OutData)));
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT8 %02X", *((uint8_t *)(((i2cdrv_comm_event_data_t *)event_data)->payload)));
                             break;
                         case BUSDATA_UINT16:
-                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT16 %04X", *((uint16_t *)(((i2cdrv_comm_event_data_t *)event_data)->OutData)));
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT16 %04X", *((uint16_t *)(((i2cdrv_comm_event_data_t *)event_data)->payload)));
                             break;
                         case BUSDATA_UINT32:
-                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT32 %08lX", *((uint32_t *)(((i2cdrv_comm_event_data_t *)event_data)->OutData)));
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT32 %08lX", *((uint32_t *)(((i2cdrv_comm_event_data_t *)event_data)->payload)));
                             break;
                         case BUSDATA_UINT64:
-                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT64 %16llX", *((uint64_t *)(((i2cdrv_comm_event_data_t *)event_data)->OutData)));
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ UINT64 %16llX", *((uint64_t *)(((i2cdrv_comm_event_data_t *)event_data)->payload)));
+                            break;
+                        case BUSDATA_BLOB:
+                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ BLOB");
+                            hexdump(((i2cdrv_comm_event_data_t *)event_data)->payload, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
                             break;
                         default:
-                            ESP_LOGI(mtag, "I2CDRV_BUSCMD_READ BLOB");
+                            ESP_LOGE(mtag, "Unknow event maybe memory conflict");
                     }
                     break;
                 case BUSCMD_WRITE:
@@ -114,17 +118,17 @@ static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t e
                     ((i2cdrv_comm_event_data_t *)event_data)->inDataLen = 1;
                     ((i2cdrv_comm_event_data_t *)event_data)->event_id = 0x0001;                    
                     //*((uint8_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData)) = 0xD0;
-                    ((i2cdrv_comm_event_data_t *)event_data)->InData[0] = 0xD0;
+                    ((i2cdrv_comm_event_data_t *)event_data)->payload[0] = 0xD0;
 
                     esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, event_data, sizeof(i2cdrv_comm_event_data_t), 1);
 
-                    ((i2cdrv_comm_event_data_t *)event_data)->InData[0] = 0xE1;
+                    ((i2cdrv_comm_event_data_t *)event_data)->payload[0] = 0xE1;
                     ((i2cdrv_comm_event_data_t *)event_data)->type = BUSDATA_BLOB;
                     ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = 15;
                     ((i2cdrv_comm_event_data_t *)event_data)->event_id = 0x0010;
                     esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, event_data, sizeof(i2cdrv_comm_event_data_t), 1);
 
-                    *((uint8_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData)) = 0x88;
+                    *((uint8_t *)(((i2cdrv_comm_event_data_t *)event_data)->payload)) = 0x88;
                     ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = 25;
                     ((i2cdrv_comm_event_data_t *)event_data)->event_id = 0x0100;
                     esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, event_data, sizeof(i2cdrv_comm_event_data_t), 1);
@@ -132,6 +136,7 @@ static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t e
             }
         }
     }
+    printf("Free memory %d\n", heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
 }
 
 void app_main(void)
@@ -160,12 +165,14 @@ void app_main(void)
            (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 
     /**/
+
+    printf("sizeof(i2cdrv_device_config_t): %d\n", sizeof(i2cdrv_device_config_t));
     uevent_loop = i2cdrv_init();
     esp_event_handler_instance_register_with(*uevent_loop, I2CRESP_EVENT, ESP_EVENT_ANY_ID, main_event_handler, NULL, NULL );
 
     i2cdrv_comm_event_data_t *data = (i2cdrv_comm_event_data_t *)calloc(1, sizeof(i2cdrv_comm_event_data_t));
     /* BME280 */
-    *((i2cdrv_device_config_t *)(data->InData)) = (i2cdrv_device_config_t){
+    *((i2cdrv_device_config_t *)(data->payload)) = (i2cdrv_device_config_t){
         .dev_config = (i2c_device_config_t) {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
             .device_address = 0x76,
@@ -175,10 +182,12 @@ void app_main(void)
         .sda_io_num = GPIO_NUM_18    
     };
     
+    printf("Free memory %d\n", heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
+
     esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
 
-    ((i2cdrv_device_config_t *)data->InData)->scl_io_num = GPIO_NUM_22;
-    ((i2cdrv_device_config_t *)data->InData)->sda_io_num = GPIO_NUM_21;
+    ((i2cdrv_device_config_t *)data->payload)->scl_io_num = GPIO_NUM_22;
+    ((i2cdrv_device_config_t *)data->payload)->sda_io_num = GPIO_NUM_21;
 
     esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_ATTACH, data, sizeof(i2cdrv_comm_event_data_t), 1);
 

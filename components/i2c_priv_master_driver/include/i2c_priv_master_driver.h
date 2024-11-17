@@ -98,8 +98,9 @@ typedef struct {
 
     i2cdrv_device_id_t device_id;
     uint32_t event_id;
-    uint8_t InData[127];
-    uint8_t OutData[127];
+    uint8_t payload[127];
+    //uint8_t InData[127];
+    //uint8_t OutData[127];
 } i2cdrv_comm_event_data_t;
 
 /**
