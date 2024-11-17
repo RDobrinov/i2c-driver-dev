@@ -12,8 +12,6 @@
 #include "idf_gpio_driver.h"
 #include "../i2c_private.h"
 
-#include "esp_log.h"
-
 #define i2cdrv_event_err(event_data, rcode) ( {((i2cdrv_comm_event_data_t *)event_data)->code = rcode; \
             i2cdrv_event_post(I2CDRV_EVENT_ERROR, event_data, sizeof(i2cdrv_comm_event_data_t));})
 
@@ -57,9 +55,6 @@ typedef struct i2cdrv_internal_config {
 
 ESP_EVENT_DEFINE_BASE(I2CCMND_EVENT);
 ESP_EVENT_DEFINE_BASE(I2CRESP_EVENT);
-
-/* Test only */
-void hexdump(const uint8_t *buf, size_t len);
 
 /* Driver internal functions */
 
@@ -160,13 +155,13 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                 }
                 return;
             }
-            /* Write command with empty pointer or zero length */
+            /* Write command with zero length */
             if( ((((i2cdrv_comm_event_data_t *)event_data)->cmd == BUSCMD_WRITE) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == BUSCMD_RW)) 
                     && (!((i2cdrv_comm_event_data_t *)event_data)->inDataLen) ) {
                 i2cdrv_event_err(event_data, BUS_ERR_BAD_ARGS);
                 return;
             }
-            /* Init pointers by command */
+            /* Set size by type */
             if((((i2cdrv_comm_event_data_t *)event_data)->cmd == BUSCMD_READ) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == BUSCMD_RW)) {
                 if(((i2cdrv_comm_event_data_t *)event_data)->type == BUSDATA_BLOB && !(((i2cdrv_comm_event_data_t *)event_data)->outDataLen)) {
                     i2cdrv_event_err(event_data, BUS_ERR_BAD_ARGS);
@@ -190,21 +185,14 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
             esp_err_t err = ESP_OK;
             switch (((i2cdrv_comm_event_data_t *)event_data)->cmd) {
                 case BUSCMD_WRITE:
-                    ESP_LOGW("I2CDRV_BUSCMD_WRITE","");
-                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->InData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
                     err = i2c_master_transmit(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->InData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen, 1);
                     break;
                 case BUSCMD_READ:
-                    ESP_LOGW("I2CDRV_BUSCMD_READ","");
-                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->OutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
                     err = i2c_master_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->OutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
                     break;
                 case BUSCMD_RW:
-                    ESP_LOGW("I2CDRV_BUSCMD_RW","");
                     err = i2c_master_transmit_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->InData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen,
                                                      ((i2cdrv_comm_event_data_t *)event_data)->OutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 10);
-                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->OutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->InData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
                     break;
                 default:
                     i2cdrv_event_err(event_data, BUS_ERR_UNKNOWN);
@@ -239,7 +227,8 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                 };
                 active_bus = (i2cdrv_bus_list_t *)calloc(1, sizeof(i2cdrv_bus_list_t));
                 if(!active_bus) {
-                    /* Error processing */ /*No mem*/
+                    gpio_drv_free_pins(pinmask);
+                    i2cdrv_event_err(event_data, ERR_NO_MEM);
                     return;
                 }
                 esp_err_t err = i2c_new_master_bus(&i2c_bus_config, &(active_bus->bus_handle));
@@ -249,10 +238,8 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                     i2cdrv_event_err(event_data, (ESP_ERR_NOT_FOUND == err) ? ERR_NO_MORE_BUSES : BUS_ERR_UNKNOWN);
                     return;
                 }
-                //ESP_ERROR_CHECK(i2c_master_probe(active_bus->bus_handle, 0x76, -1));
                 if(i2cdrv_run_config->i2cdrv_buses) active_bus->next = i2cdrv_run_config->i2cdrv_buses;
                 i2cdrv_run_config->i2cdrv_buses = active_bus;
-                //ESP_LOGE("bus", "HANDLE: %p", active_bus->bus_handle);
             }
             i2cdrv_attach_device(active_bus, (((i2cdrv_comm_event_data_t *)event_data)));
             return;
@@ -277,7 +264,7 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
     return;
 }
 
-esp_event_loop_handle_t *i2cdrv_init() {
+esp_event_loop_handle_t *i2cdrv_init() {        /* One event loop for all busses */
     gpio_drv_init();
     /* Create internal structures */
     if(!i2cdrv_run_config) {
@@ -300,18 +287,6 @@ esp_event_loop_handle_t *i2cdrv_init() {
     }
     return (i2cdrv_run_config) ? i2cdrv_run_config->i2cdrv_event_loop : NULL;
 }
-/*
-static void i2cdrv_event_post(int32_t event_id, const void *event_data, size_t event_data_size) {
-    (i2cdrv_run_config->i2cdrv_event_loop) ? esp_event_post_to(*(i2cdrv_run_config->i2cdrv_event_loop), I2CRESP_EVENT, event_id, event_data, event_data_size, 1)
-                                  : esp_event_post(I2CRESP_EVENT, event_id, event_data, event_data_size, 1);
-}*/
-
-/*
-static void i2cdrv_event_err(const void *event_data, i2cdrv_bus_opcodes_t code) {
-    ((i2cdrv_comm_event_data_t *)event_data)->code = code;
-    i2cdrv_event_post(I2CDRV_EVENT_ERROR, event_data, sizeof(i2cdrv_comm_event_data_t));
-    return;
-}*/
 
 /* Helper functions */
 
@@ -399,19 +374,5 @@ void i2cdrv_deattach_device(i2cdrv_comm_event_data_t *event_data) {
             }
         }
     }
-    return;
-}
-
-/* Test only */
-
-void hexdump(const uint8_t *buf, size_t len) {
-    if( !len ) return;
-    ESP_LOGI("hexdump", "%p", buf);
-    for(int i=0; i<len; i++) printf("%02X ", buf[i]);
-    printf("\n");
-    return;
-}
-
-void i2v_priv_drv_dummy(void) {
     return;
 }

@@ -66,8 +66,7 @@ typedef enum {
     ERR_PIN_IN_USE,
     ERR_DEVICE_ALREADY_ATTACHED,
     ERR_DEVICE_NOT_FOUND,
-    ERR_DEVICE_NOT_ACK,
-    ERR_TEST
+    ERR_DEVICE_NOT_ACK
 } i2cdrv_bus_opcodes_t;
 
 /**

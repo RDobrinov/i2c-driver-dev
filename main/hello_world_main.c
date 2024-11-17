@@ -53,6 +53,14 @@ uint32_t inData, outData;
 esp_event_loop_handle_t *uevent_loop;
 uint8_t inBuffer[127];
 
+void hexdump(const uint8_t *buf, size_t len) {
+    if( !len ) return;
+    ESP_LOGI("hexdump", "%p", buf);
+    for(int i=0; i<len; i++) printf("%02X ", buf[i]);
+    printf("\n");
+    return;
+}
+
 static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if( I2CRESP_EVENT == event_base) {
         if(I2CDRV_EVENT_ATTACHED == event_id) {
@@ -69,11 +77,7 @@ static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t e
             ESP_LOGI(mtag, "[EVTID: %04lX ERROR: %02d] %s ID: %08lX", ((i2cdrv_comm_event_data_t *)event_data)->event_id, 
                     ((i2cdrv_comm_event_data_t *)event_data)->code, 
                     cc_errors[((i2cdrv_comm_event_data_t *)event_data)->code],
-                    ((i2cdrv_comm_event_data_t *)event_data)->device_id.id
-                    );
-            if(((i2cdrv_comm_event_data_t *)event_data)->code == ERR_TEST) {
-                ESP_LOGE("", "%08lX, %08lX", inData, outData);
-            }
+                    ((i2cdrv_comm_event_data_t *)event_data)->device_id.id);
         }
         if(I2CDRV_EVENT_DATA == event_id) {
             if(((i2cdrv_comm_event_data_t *)event_data)->code != BUS_OK) {
@@ -125,9 +129,6 @@ static void main_event_handler(void* arg, esp_event_base_t event_base, int32_t e
                     ((i2cdrv_comm_event_data_t *)event_data)->event_id = 0x0100;
                     esp_event_post_to(*uevent_loop, I2CCMND_EVENT, I2CDRV_EVENT_OPEXEC, event_data, sizeof(i2cdrv_comm_event_data_t), 1);
                 default:
-            }
-            if(((i2cdrv_comm_event_data_t *)event_data)->code == ERR_TEST) {
-                ESP_LOGE("", "%08lX, %08lX", inData, outData);
             }
         }
     }
