@@ -39,35 +39,35 @@ typedef enum {
 ESP_EVENT_DECLARE_BASE(I2CRESP_EVENT);
 
 typedef enum {
-    I2CDRV_BUSCMD_READ,
-    I2CDRV_BUSCMD_WRITE,
-    I2CDRV_BUSCMD_RW,
-    I2CDRV_BUSPROBE,
-    I2CDRV_BUSCTL
+    BUSCMD_READ,
+    BUSCMD_WRITE,
+    BUSCMD_RW,
+    BUSCMD_PROBE,
+    BUSCMD_CTL
 } i2cdrv_bus_command_t;
 
 typedef enum {
-    I2CDRV_BUSDATA_BLOB = 0,
-    I2CDRV_BUSDATA_UINT8,
-    I2CDRV_BUSDATA_UINT16,
-    I2CDRV_BUSDATA_UINT32,
-    I2CDRV_BUSDATA_UINT64,
-    I2CDRV_BUSDATA_MAX
+    BUSDATA_BLOB = 0,
+    BUSDATA_UINT8,
+    BUSDATA_UINT16,
+    BUSDATA_UINT32,
+    BUSDATA_UINT64,
+    BUSDATA_MAX
 } i2cdrv_bus_data_t;
 
 typedef enum {
-    I2CDRV_BUS_OK,
-    I2CDRV_BUS_ERR_NOT_FOUND,
-    I2CDRV_BUS_ERR_TIMEOUT,
-    I2CDRV_BUS_ERR_BAD_ARGS,
-    I2CDRV_ERR_NO_MEM,
-    I2CDRV_ERR_NO_MORE_BUSES,
-    I2CDRV_ERR_PIN_IN_USE,
-    I2CDRV_ERR_DEVICE_ALREADY_ATTACHED,
-    I2CDRV_ERR_DEVICE_NOT_FOUND,
-    I2CDRV_ERR_DEVICE_NOT_ACK,
-    I2CDRV_ERR_TEST,
-    I2CDRV_BUS_ERR_UNKNOWN
+    BUS_ERR_NOT_FOUND,
+    BUS_ERR_TIMEOUT,
+    BUS_ERR_BAD_ARGS,
+    BUS_ERR_UNKNOWN,
+    BUS_OK,
+    ERR_NO_MEM,
+    ERR_NO_MORE_BUSES,
+    ERR_PIN_IN_USE,
+    ERR_DEVICE_ALREADY_ATTACHED,
+    ERR_DEVICE_NOT_FOUND,
+    ERR_DEVICE_NOT_ACK,
+    ERR_TEST
 } i2cdrv_bus_opcodes_t;
 
 /**
@@ -99,8 +99,8 @@ typedef struct {
 
     i2cdrv_device_id_t device_id;
     uint32_t event_id;
-    void *ptrInData;
-    void *ptrOutData;
+    uint8_t InData[127];
+    uint8_t OutData[127];
 } i2cdrv_comm_event_data_t;
 
 /**
@@ -112,7 +112,7 @@ typedef struct i2cdrv_device_config {
     gpio_num_t scl_io_num;              /*!< GPIO for SCL I2C Signal */
 } i2cdrv_device_config_t;              /*!< GPIO for SDA I2C Signal */
 
-void i2cdrv_init(esp_event_loop_handle_t *i2cdrv_evt_loop);
+esp_event_loop_handle_t *i2cdrv_init();
 
 void i2v_priv_drv_dummy(void);
 

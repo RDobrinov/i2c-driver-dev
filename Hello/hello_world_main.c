@@ -259,4 +259,24 @@ void app_main(void)
     //}
 
     fflush(stdout);
+
+
+        uevent_loop = (esp_event_loop_handle_t *)malloc(sizeof(esp_event_loop_handle_t));
+    esp_event_loop_args_t uevent_args = {
+        .queue_size = 5,
+        .task_name = "testuloop",
+        .task_priority = 15,
+        .task_stack_size = 3072,
+        .task_core_id = tskNO_AFFINITY
+    };
+    esp_err_t err;
+    err = esp_event_loop_create(&uevent_args, uevent_loop);
+    (void)err;
+
+    (i2cdrv_device_config_t *)(data->inData) = test_dev;
+    test_dev->dev_config = (i2c_device_config_t) {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x76,
+        .scl_speed_hz = 400000 
+        };
 }

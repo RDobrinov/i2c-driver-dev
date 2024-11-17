@@ -14,6 +14,14 @@
 
 #include "esp_log.h"
 
+#define i2cdrv_event_err(event_data, rcode) ( {((i2cdrv_comm_event_data_t *)event_data)->code = rcode; \
+            i2cdrv_event_post(I2CDRV_EVENT_ERROR, event_data, sizeof(i2cdrv_comm_event_data_t));})
+
+#define i2cdrv_event_post(event_id, event_data, event_data_size) ( { \
+    (i2cdrv_run_config->i2cdrv_event_loop) ? esp_event_post_to(*(i2cdrv_run_config->i2cdrv_event_loop), \
+    I2CRESP_EVENT, event_id, event_data, event_data_size, 1) \
+    : esp_event_post(I2CRESP_EVENT, event_id, event_data, event_data_size, 1);})
+
 /**
  * @brief Type of slist element for active i2c buses
 */
@@ -42,7 +50,7 @@ typedef struct i2cdrv_internal_config {
         };
         uint32_t states_holder;         /*!< Init complete */
     };
-    esp_event_loop_handle_t i2cdrv_event_loop;
+    esp_event_loop_handle_t *i2cdrv_event_loop;
     i2cdrv_bus_list_t *i2cdrv_buses;
     i2cdrv_device_list_t *i2c_devices;
 } i2cdrv_internal_config_t;
@@ -77,7 +85,7 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
  * @return 
  *      - None
 */
-static void i2cdrv_event_post(int32_t event_id, const void *event_data, size_t event_data_size);
+//static void i2cdrv_event_post(int32_t event_id, const void *event_data, size_t event_data_size);
 
 /**
  * @brief Driver error event post
@@ -88,7 +96,7 @@ static void i2cdrv_event_post(int32_t event_id, const void *event_data, size_t e
  * @return 
  *      - None
 */
-static void i2cdrv_event_err(const void *event_data, i2cdrv_bus_opcodes_t code);
+//static void i2cdrv_event_err(const void *event_data, i2cdrv_bus_opcodes_t code);
 
 /**
  * @brief Attach device to master bus
@@ -135,121 +143,97 @@ static i2cdrv_internal_config_t *i2cdrv_run_config = NULL;
 static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if( I2CCMND_EVENT == event_base) {
         if(I2CDRV_EVENT_OPEXEC == event_id) {
-            ((i2cdrv_comm_event_data_t *)event_data)->code = I2CDRV_BUS_OK;
+            ((i2cdrv_comm_event_data_t *)event_data)->code = BUS_OK;
             /* Find device in device list */
             i2cdrv_device_list_t *device = i2cdrv_find_device_by_id(((i2cdrv_comm_event_data_t *)event_data)->device_id.id);
             if( !device ) {
-                i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_NOT_FOUND);
+                i2cdrv_event_err(event_data, ERR_DEVICE_NOT_FOUND);
                 return;
             }
             /* No return value */
-            if(I2CDRV_BUSPROBE == ((i2cdrv_comm_event_data_t *)event_data)->cmd) {
-                //ESP_LOGE("pool", "%p 0x%02X", device->dev_handle->master_bus, device->dev_handle->device_address);
+            if(BUSCMD_PROBE == ((i2cdrv_comm_event_data_t *)event_data)->cmd) {
                 if(ESP_OK != i2c_master_probe(device->dev_handle->master_bus, device->dev_handle->device_address, 10)) {
-                    i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_NOT_ACK);
+                    i2cdrv_event_err(event_data, ERR_DEVICE_NOT_ACK);
                 } else {
-                    ((i2cdrv_comm_event_data_t *)event_data)->code = I2CDRV_BUS_OK;
+                    ((i2cdrv_comm_event_data_t *)event_data)->code = BUS_OK;
                     i2cdrv_event_post(I2CDRV_EVENT_DATA, event_data, sizeof(i2cdrv_comm_event_data_t));
                 }
                 return;
             }
-            ESP_LOGW("dev_handle", "%p, %X", device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->cmd);
             /* Write command with empty pointer or zero length */
-            if( ((((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_WRITE) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_RW)) 
-                    && (!((i2cdrv_comm_event_data_t *)event_data)->inDataLen || !((i2cdrv_comm_event_data_t *)event_data)->ptrInData)) {
-                i2cdrv_event_err(event_data, I2CDRV_BUS_ERR_BAD_ARGS);
+            if( ((((i2cdrv_comm_event_data_t *)event_data)->cmd == BUSCMD_WRITE) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == BUSCMD_RW)) 
+                    && (!((i2cdrv_comm_event_data_t *)event_data)->inDataLen) ) {
+                i2cdrv_event_err(event_data, BUS_ERR_BAD_ARGS);
                 return;
             }
             /* Init pointers by command */
-            if((((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_READ) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == I2CDRV_BUSCMD_RW)) {
-                if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_BLOB && !(((i2cdrv_comm_event_data_t *)event_data)->outDataLen)) {
-                    i2cdrv_event_err(event_data, I2CDRV_BUS_ERR_BAD_ARGS);
+            if((((i2cdrv_comm_event_data_t *)event_data)->cmd == BUSCMD_READ) || (((i2cdrv_comm_event_data_t *)event_data)->cmd == BUSCMD_RW)) {
+                if(((i2cdrv_comm_event_data_t *)event_data)->type == BUSDATA_BLOB && !(((i2cdrv_comm_event_data_t *)event_data)->outDataLen)) {
+                    i2cdrv_event_err(event_data, BUS_ERR_BAD_ARGS);
                 } else {
                     switch (((i2cdrv_comm_event_data_t *)event_data)->type) {
-                        case I2CDRV_BUSDATA_UINT8:
+                        case BUSDATA_UINT8:
                             ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = sizeof(uint8_t);
                             break;
-                        case I2CDRV_BUSDATA_UINT16:
+                        case BUSDATA_UINT16:
                             ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = sizeof(uint16_t);
                             break;
-                        case I2CDRV_BUSDATA_UINT32:
+                        case BUSDATA_UINT32:
                             ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = sizeof(uint32_t);
                             break;
-                        case I2CDRV_BUSDATA_UINT64:
+                        case BUSDATA_UINT64:
                             ((i2cdrv_comm_event_data_t *)event_data)->outDataLen = sizeof(uint64_t);
                             break;
                     }
                 }
-                if(!((i2cdrv_comm_event_data_t *)event_data)->ptrOutData) {
-                    ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData = (uint8_t *)calloc(((i2cdrv_comm_event_data_t *)event_data)->inDataLen, sizeof(uint8_t));
-                    if(!((i2cdrv_comm_event_data_t *)event_data)->ptrOutData) {
-                        i2cdrv_event_err(event_data, I2CDRV_ERR_NO_MEM);
-                        return;
-                    }
-                }
             }
             esp_err_t err = ESP_OK;
-            uint8_t test8 = 0x55;
-            uint16_t test16 = 0x5AA5;
-            uint32_t test32 = 0xA5AA5CAUL;
-            uint64_t test64 = 0x2132A5AA5CA3221ULL;
-            uint8_t *testblob = (uint8_t *)("1234567890ABDCEF");
             switch (((i2cdrv_comm_event_data_t *)event_data)->cmd) {
-                case I2CDRV_BUSCMD_WRITE:
+                case BUSCMD_WRITE:
                     ESP_LOGW("I2CDRV_BUSCMD_WRITE","");
-                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
-                    //err = i2c_master_transmit(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen, 1);
+                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->InData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
+                    err = i2c_master_transmit(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->InData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen, 1);
                     break;
-                case I2CDRV_BUSCMD_READ:
+                case BUSCMD_READ:
                     ESP_LOGW("I2CDRV_BUSCMD_READ","");
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_BLOB) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, testblob, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT8) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test8, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT16) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test16, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT32) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test32, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT64) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test64, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    //err = i2c_master_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
+                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->OutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    err = i2c_master_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->OutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 1);
                     break;
-                case I2CDRV_BUSCMD_RW:
+                case BUSCMD_RW:
                     ESP_LOGW("I2CDRV_BUSCMD_RW","");
-                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_BLOB) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, testblob, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT8) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test8, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT16) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test16, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT32) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test32, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    //if(((i2cdrv_comm_event_data_t *)event_data)->type == I2CDRV_BUSDATA_UINT64) memcpy(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, &test64, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    err = i2c_master_transmit_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen,
-                                                     ((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 10);
-                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrOutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
-                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->ptrInData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
+                    err = i2c_master_transmit_receive(device->dev_handle, ((i2cdrv_comm_event_data_t *)event_data)->InData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen,
+                                                     ((i2cdrv_comm_event_data_t *)event_data)->OutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen, 10);
+                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->OutData, ((i2cdrv_comm_event_data_t *)event_data)->outDataLen);
+                    hexdump(((i2cdrv_comm_event_data_t *)event_data)->InData, ((i2cdrv_comm_event_data_t *)event_data)->inDataLen);
                     break;
                 default:
-                    i2cdrv_event_err(event_data, I2CDRV_BUS_ERR_UNKNOWN);
+                    i2cdrv_event_err(event_data, BUS_ERR_UNKNOWN);
                     return;
             }
-            if(ESP_OK != err) i2cdrv_event_err(event_data, (ESP_ERR_TIMEOUT == err ) ? I2CDRV_BUS_ERR_TIMEOUT : I2CDRV_BUS_ERR_UNKNOWN);
+            if(ESP_OK != err) i2cdrv_event_err(event_data, (ESP_ERR_TIMEOUT == err ) ? BUS_ERR_TIMEOUT : BUS_ERR_UNKNOWN);
             else {
-                ((i2cdrv_comm_event_data_t *)event_data)->code = I2CDRV_BUS_OK;
+                ((i2cdrv_comm_event_data_t *)event_data)->code = BUS_OK;
                 i2cdrv_event_post(I2CDRV_EVENT_DATA, event_data, sizeof(i2cdrv_comm_event_data_t));
             }
             return;
         }
         if(I2CDRV_EVENT_ATTACH == event_id) {
-            uint64_t pinmask = (BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num) | 
-                        BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num));
+            uint64_t pinmask = (BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->scl_io_num) | 
+                        BIT64(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->sda_io_num));
             i2cdrv_bus_list_t *active_bus = i2cdrv_find_bus( 
-                ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num, 
-                ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num 
+                ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->scl_io_num, 
+                ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->sda_io_num 
             );
             if(!active_bus) {
                 if( !gpio_drv_reserve_pins(pinmask) ) {
-                    i2cdrv_event_err(event_data, I2CDRV_ERR_PIN_IN_USE);
+                    i2cdrv_event_err(event_data, ERR_PIN_IN_USE);
                     return;
                 }
                 i2c_master_bus_config_t i2c_bus_config = {
                     .clk_source = I2C_CLK_SRC_DEFAULT,
                     .i2c_port = -1,
-                    .scl_io_num = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num,
-                    .sda_io_num = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num, 
+                    .scl_io_num = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->scl_io_num,
+                    .sda_io_num = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->sda_io_num, 
                     .glitch_ignore_cnt = 7,
                     .flags.enable_internal_pullup = true,
                 };
@@ -262,7 +246,7 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
                 if( ESP_OK != err ) {
                     free(active_bus);
                     gpio_drv_free_pins(pinmask);
-                    i2cdrv_event_err(event_data, (ESP_ERR_NOT_FOUND == err) ? I2CDRV_ERR_NO_MORE_BUSES : I2CDRV_BUS_ERR_UNKNOWN);
+                    i2cdrv_event_err(event_data, (ESP_ERR_NOT_FOUND == err) ? ERR_NO_MORE_BUSES : BUS_ERR_UNKNOWN);
                     return;
                 }
                 //ESP_ERROR_CHECK(i2c_master_probe(active_bus->bus_handle, 0x76, -1));
@@ -293,35 +277,41 @@ static void i2cdrv_event_handler(void* arg, esp_event_base_t event_base, int32_t
     return;
 }
 
-void i2cdrv_init(esp_event_loop_handle_t *uevent_loop) {
+esp_event_loop_handle_t *i2cdrv_init() {
     gpio_drv_init();
     /* Create internal structures */
     if(!i2cdrv_run_config) {
         i2cdrv_run_config = (i2cdrv_internal_config_t *)calloc(1, sizeof(i2cdrv_internal_config_t));
         if(i2cdrv_run_config) {
-            i2cdrv_run_config->i2cdrv_event_loop = (uevent_loop) ? *uevent_loop : NULL;
+            i2cdrv_run_config->i2cdrv_event_loop = (esp_event_loop_handle_t *)calloc(1, sizeof(esp_event_loop_handle_t));
+            esp_event_loop_args_t uevent_args = {
+                .queue_size = 10,
+                .task_name = "i2cevt",
+                .task_priority = 15,
+                .task_stack_size = 3072,
+                .task_core_id = tskNO_AFFINITY
+            };
+            esp_event_loop_create(&uevent_args, i2cdrv_run_config->i2cdrv_event_loop);
             if(i2cdrv_run_config->i2cdrv_event_loop) {
-                esp_event_handler_instance_register_with(i2cdrv_run_config->i2cdrv_event_loop, I2CCMND_EVENT, ESP_EVENT_ANY_ID, i2cdrv_event_handler, NULL, NULL );
-            } else {
-                esp_event_handler_instance_register(I2CCMND_EVENT, ESP_EVENT_ANY_ID, i2cdrv_event_handler, NULL, NULL );
+                esp_event_handler_instance_register_with(*(i2cdrv_run_config->i2cdrv_event_loop), I2CCMND_EVENT, ESP_EVENT_ANY_ID, i2cdrv_event_handler, NULL, NULL );
+                i2cdrv_run_config->init_complete = true; //Not used
             }
-            i2cdrv_run_config->init_complete = true;
-        } else {
-            ESP_LOGE(tag, "NO_MEM");
         }
     }
+    return (i2cdrv_run_config) ? i2cdrv_run_config->i2cdrv_event_loop : NULL;
 }
-
+/*
 static void i2cdrv_event_post(int32_t event_id, const void *event_data, size_t event_data_size) {
-    (i2cdrv_run_config->i2cdrv_event_loop) ? esp_event_post_to(i2cdrv_run_config->i2cdrv_event_loop, I2CRESP_EVENT, event_id, event_data, event_data_size, 1)
+    (i2cdrv_run_config->i2cdrv_event_loop) ? esp_event_post_to(*(i2cdrv_run_config->i2cdrv_event_loop), I2CRESP_EVENT, event_id, event_data, event_data_size, 1)
                                   : esp_event_post(I2CRESP_EVENT, event_id, event_data, event_data_size, 1);
-}
+}*/
 
+/*
 static void i2cdrv_event_err(const void *event_data, i2cdrv_bus_opcodes_t code) {
     ((i2cdrv_comm_event_data_t *)event_data)->code = code;
     i2cdrv_event_post(I2CDRV_EVENT_ERROR, event_data, sizeof(i2cdrv_comm_event_data_t));
     return;
-}
+}*/
 
 /* Helper functions */
 
@@ -345,26 +335,26 @@ i2cdrv_device_list_t *i2cdrv_find_device_by_id(uint32_t id) {
 
 void i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_comm_event_data_t *event_data) {
     event_data->device_id = ((i2cdrv_device_id_t) {
-        .i2caddr = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->dev_config.device_address,
+        .i2caddr = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->dev_config.device_address,
         .i2cbus = bus->bus_handle->base->port_num,
-        .gpioscl = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->scl_io_num,
-        .gpiosda = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->sda_io_num
+        .gpioscl = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->scl_io_num,
+        .gpiosda = ((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->sda_io_num
     });
     if(i2cdrv_find_device_by_id(event_data->device_id.id)) {
-        i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_ALREADY_ATTACHED);
+        i2cdrv_event_err(event_data, ERR_DEVICE_ALREADY_ATTACHED);
         return;
     }
     i2c_master_dev_handle_t *new_dev_handle = (i2c_master_dev_handle_t *)calloc(1, sizeof(i2c_master_dev_handle_t));
-    esp_err_t err = i2c_master_bus_add_device(bus->bus_handle, &(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->ptrInData))->dev_config), new_dev_handle);
+    esp_err_t err = i2c_master_bus_add_device(bus->bus_handle, &(((i2cdrv_device_config_t *)(((i2cdrv_comm_event_data_t *)event_data)->InData))->dev_config), new_dev_handle);
     if(ESP_OK != err) {
         free(new_dev_handle);
-        i2cdrv_event_err(event_data, I2CDRV_ERR_NO_MEM);
+        i2cdrv_event_err(event_data, ERR_NO_MEM);
     }
     i2cdrv_device_list_t *new_list_entry = (i2cdrv_device_list_t *)calloc(1, sizeof(i2cdrv_device_list_t));
     if(!new_list_entry) {
         i2c_master_bus_rm_device(*new_dev_handle);
         free(new_dev_handle);
-        i2cdrv_event_err(event_data, I2CDRV_ERR_NO_MEM);
+        i2cdrv_event_err(event_data, ERR_NO_MEM);
         return;
     }
     new_list_entry->dev_handle = *new_dev_handle;
@@ -372,7 +362,7 @@ void i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_comm_event_data_t *even
 
     if( i2cdrv_run_config->i2c_devices ) new_list_entry->next = i2cdrv_run_config->i2c_devices;
     i2cdrv_run_config->i2c_devices = new_list_entry;
-    event_data->code = I2CDRV_BUS_OK;
+    event_data->code = BUS_OK;
     i2cdrv_event_post(I2CDRV_EVENT_ATTACHED, event_data, sizeof(i2cdrv_comm_event_data_t));
     return;
 }
@@ -380,11 +370,11 @@ void i2cdrv_attach_device(i2cdrv_bus_list_t *bus, i2cdrv_comm_event_data_t *even
 void i2cdrv_deattach_device(i2cdrv_comm_event_data_t *event_data) {
     i2cdrv_device_list_t *found = i2cdrv_find_device_by_id(event_data->device_id.id);
     if(!found) {
-        i2cdrv_event_err(event_data, I2CDRV_ERR_DEVICE_NOT_FOUND);
+        i2cdrv_event_err(event_data, ERR_DEVICE_NOT_FOUND);
     } else {
         i2c_master_bus_handle_t bus = found->dev_handle->master_bus;
         if( ESP_OK == i2c_master_bus_rm_device(found->dev_handle) ) {
-            event_data->code = I2CDRV_BUS_OK;
+            event_data->code = BUS_OK;
             i2cdrv_event_post(I2CDRV_EVENT_DEATTACHED, event_data, sizeof(i2cdrv_comm_event_data_t));
             if( found == i2cdrv_run_config->i2c_devices ) i2cdrv_run_config->i2c_devices = found->next;
             else {

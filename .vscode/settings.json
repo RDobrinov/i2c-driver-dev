@@ -4,5 +4,9 @@
         "board/esp32-wrover-kit-3.3v.cfg"
     ],
     "idf.flashType": "UART",
-    "idf.port": "/dev/ttyUSB0"
+    "idf.port": "/dev/ttyUSB0",
+    "files.associations": {
+        "future": "c",
+        "system_error": "c"
+    }
 }
